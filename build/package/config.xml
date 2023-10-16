@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" id="afb-acpp-text" version="1.0">
+  <name>afb-acpp-text</name>
+  <icon src="icon.jpg"/>
+  <content src="" type=""/>
+  <description>Provide OCPP-1.6+2.0.1 websocket RPC</description>
+  <author>Iot-Team &lt;secretariat@iot.bzh&gt;</author>
+  <license>Apache-2</license>
+</widget>
