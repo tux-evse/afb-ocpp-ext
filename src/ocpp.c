@@ -404,21 +404,27 @@ static void ows_on_call_cb(void *closure, const char *api, const char *verb, str
 
 static void ows_on_reply(void *closure, struct afb_wsj1_msg *msg)
 {
+	int sts, rc;
 	struct afb_req_common *req = closure;
 	struct afb_data *data;
 	size_t size;
 	const char *object = afb_wsj1_msg_object_s(msg, &size);
-	int rc = afb_data_create_raw(&data,  &afb_type_predefined_json, object, 1+size,
+
+	afb_wsj1_msg_addref(msg);
+	rc = afb_data_create_raw(&data,  &afb_type_predefined_json, object, 1+size,
 					(void*)afb_wsj1_msg_unref, msg);
-	int sts = afb_wsj1_msg_is_reply_ok(msg) ? 0 : -1;
+	sts = afb_wsj1_msg_is_reply_ok(msg) ? 0 : -1;
 	afb_req_common_reply_hookable(req, sts, 1, &data);
+	afb_req_common_unref(req);
 }
 
 static void ows_send_call(void *closure1, const char *object, const void *closure2)
 {
 	struct afb_req_common *req = closure1;
 	const struct ocpp_ws *ws = closure2;
-	int rc = afb_wsj1_call_s(ws->wsj1, NULL, req->verbname, object, ows_on_reply, req);
+	int rc;
+	afb_req_common_addref(req);
+	rc = afb_wsj1_call_s(ws->wsj1, NULL, req->verbname, object, ows_on_reply, req);
 }
 
 static void ows_on_process(void *closure, struct afb_req_common *req)
@@ -508,7 +514,7 @@ static int ocpp_connect(ocpp_item_t *ocpp)
 		if (session == NULL)
 			rc = X_ENOMEM;
 		else {
-			ows = ocpp_ws_create( ocpp, fd, 1, ocpp->call_set, session, NULL, NULL, NULL, OCPP_API_CLIENT);
+			ows = ocpp_ws_create(ocpp, fd, 1, ocpp->call_set, session, NULL, NULL, NULL, OCPP_API_CLIENT);
 			if (ows != NULL)
 				return 0;
 		}
