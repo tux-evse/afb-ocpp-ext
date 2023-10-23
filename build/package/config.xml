@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" id="afb-acpp-text" version="1.0">
-  <name>afb-acpp-text</name>
+<widget xmlns="http://www.w3.org/ns/widgets" id="afb-ocpp" version="1.0">
+  <name>afb-ocpp</name>
   <icon src="icon.jpg"/>
   <content src="" type=""/>
   <description>Provide OCPP-1.6+2.0.1 websocket RPC</description>

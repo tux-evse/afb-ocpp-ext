@@ -474,7 +474,7 @@ static int wsreq_interface(struct afb_req_common *comreq, int id, const char *na
 				rc = -1;
 		}
 	}
-	return -1;
+	return rc;
 }
 
 /***************************************************************
@@ -495,8 +495,7 @@ static int ocpp_connect(ocpp_item_t *ocpp)
 	struct ev_mgr *mgr = afb_ev_mgr_get_for_me();
 
     if (ocpp->sha256pwd) {
-//        headers= calloc (2, sizeof(char*));
-        asprintf (&headers[0], "authorization: Basic %s", json_object_get_string(ocpp->sha256pwd));
+        int rc= asprintf (&headers[0], "authorization: Basic %s", json_object_get_string(ocpp->sha256pwd));
     };
 	const char *protos[2] = { OCPP_PROTOCOL, NULL };
 	int rc = afb_ws_connect(mgr, uri, protos, NULL, (const char**) headers);
