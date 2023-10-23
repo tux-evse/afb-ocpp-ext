@@ -57,25 +57,25 @@ int AfbExtensionConfigV1(void **data, struct json_object *config, const char *ui
 
 int AfbExtensionDeclareV1(void *data, struct afb_apiset *declare_set, struct afb_apiset *call_set)
 {
-	LIBAFB_NOTICE("Extension %s got to declare %s", AfbExtensionManifest.name, data == &AfbExtensionManifest ? "ok" : "error");
+	LIBAFB_NOTICE("Extension %s got to declare", AfbExtensionManifest.name);
 	return ocpp_declare((ocpp_item_t*)data, declare_set, call_set);
 }
 
 int AfbExtensionHTTPV1(void *data, struct afb_hsrv *hsrv)
 {
-	LIBAFB_NOTICE("Extension %s got HTTP %s", AfbExtensionManifest.name, data == &AfbExtensionManifest ? "ok" : "error");
+	LIBAFB_NOTICE("Extension %s got HTTP", AfbExtensionManifest.name);
 	return ocpp_http((ocpp_item_t*)data, hsrv);
 }
 
 int AfbExtensionServeV1(void *data, struct afb_apiset *call_set)
 {
-	LIBAFB_NOTICE("Extension %s got to serve %s", AfbExtensionManifest.name, data == &AfbExtensionManifest ? "ok" : "error");
+	LIBAFB_NOTICE("Extension %s got to serve", AfbExtensionManifest.name);
 	return ocpp_serve((ocpp_item_t*)data, call_set);
 }
 
 int AfbExtensionExitV1(void *data, struct afb_apiset *declare_set)
 {
-	LIBAFB_NOTICE("Extension %s got to exit %s", AfbExtensionManifest.name, data == &AfbExtensionManifest ? "ok" : "error");
+	LIBAFB_NOTICE("Extension %s got to exit", AfbExtensionManifest.name);
 	return ocpp_exit((ocpp_item_t*)data, declare_set);
 }
 
@@ -84,7 +84,7 @@ struct ocpp_item
 {
 	int server;
 	json_object *uri;
-    json_object *sha256pwd;
+	json_object *sha256pwd;
 	struct afb_apiset *declare_set;
 	struct afb_apiset *call_set;
 };
@@ -121,7 +121,7 @@ static int ocpp_config(ocpp_item_t **items, struct json_object *config)
 			rc = -ENOMEM;
 		else {
 			item->server = server != NULL;
-            item->sha256pwd = uri == NULL ? NULL : json_object_get(sha256pwd);
+			item->sha256pwd = uri == NULL ? NULL : json_object_get(sha256pwd);
 			item->uri = uri == NULL ? NULL : json_object_get(uri);
 		}
 	}
@@ -488,17 +488,20 @@ static int wsreq_interface(struct afb_req_common *comreq, int id, const char *na
 static int ocpp_connect(ocpp_item_t *ocpp)
 {
 	struct ocpp_ws *ows;
-    char *headers[2]= {NULL,NULL};
-	int fd;
+	char *headers[2]= {NULL,NULL};
+	int rc, fd;
+	const char *protos[2] = { OCPP_PROTOCOL, NULL };
 	struct afb_session *session;
 	const char *uri = json_object_get_string(ocpp->uri);
 	struct ev_mgr *mgr = afb_ev_mgr_get_for_me();
 
-    if (ocpp->sha256pwd) {
-        int rc= asprintf (&headers[0], "authorization: Basic %s", json_object_get_string(ocpp->sha256pwd));
-    };
-	const char *protos[2] = { OCPP_PROTOCOL, NULL };
-	int rc = afb_ws_connect(mgr, uri, protos, NULL, (const char**) headers);
+	if (ocpp->sha256pwd) {
+		rc= asprintf (&headers[0], "authorization: Basic %s", json_object_get_string(ocpp->sha256pwd));
+		if (rc < 0)
+			headers[0] = NULL;
+	}
+	rc = afb_ws_connect(mgr, uri, protos, NULL, (const char**) headers);
+	free(headers[0]);
 	if (rc >= 0) {
 		fd = rc;
 		session = afb_api_common_get_common_session();
