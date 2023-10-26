@@ -133,7 +133,8 @@ static int ocpp_declare(ocpp_item_t *items, struct afb_apiset *declare_set, stru
 {
 	int rc = 0;
 	if (items) {
-		struct afb_apiset *ds = afb_apiset_subset_find(declare_set, "public") ?: declare_set;
+		//struct afb_apiset *ds = afb_apiset_subset_find(declare_set, "monitor") ?: declare_set;
+		struct afb_apiset *ds = declare_set;
 		items->declare_set = afb_apiset_addref(ds);
 		items->call_set = afb_apiset_addref(call_set);
 		if (items->uri != NULL) {
