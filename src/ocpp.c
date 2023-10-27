@@ -279,6 +279,7 @@ ocpp_ws_create(
 	if (result->wsj1 == NULL)
 		goto error3;
 
+	afb_wsj1_set_masking(result->wsj1, 1);
 	aai.closure = result;
 	aai.itf = &bkapitf;
 	aai.group = result;
