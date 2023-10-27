@@ -46,16 +46,11 @@ set (gcc_minimal_version 4.9)
 set (PKG_REQUIRED_LIST
 	libafb>=5
 	libafb-binder>=5
-    # librp-utils>=>0.0.5 (pkgconfig missing)
 )
 
 # Print a helper message when every thing is finished
 # ----------------------------------------------------
 set( CLOSING_MESSAGE "Debug: afb-binder --name=ocpp-client --verbose --extension=package/lib/libafb-ocpp-ext.so --ocpp-client=csms-host:9310/ws/Tux-Basic --ocpp-pwd-base64=VHV4LUJhc2ljOnNub29weQ== #snoopy")
-
-# Customize link option
-# -----------------------------
-list(APPEND link_libraries "-ldl")
 
 # (BUG!!!) as PKG_CONFIG_PATH does not work [should be an env variable]
 # ---------------------------------------------------------------------

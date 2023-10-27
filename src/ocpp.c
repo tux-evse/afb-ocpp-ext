@@ -18,6 +18,7 @@
 #include <libafb/afb-http.h>
 #include <libafb/afb-misc.h>
 #include <libafb/afb-wsj1.h>
+#include <libafb/utils/websock.h>
 #include <stdio.h>
 
 #define OCPP_PROTOCOL      "ocpp1.6"
@@ -26,8 +27,13 @@
 #define OCPP_BKAPI         "OCPP-BACK-API"
 #define OCPP_BKAPI_PATTERN "x-OCPP-%u"
 
-/* predeclaration of ocpp_item the ocpp manager */
+/* predeclaration of structures */
+struct ocpp_item;
+struct ocpp_ws;
+struct ocpp_req;
 typedef struct ocpp_item ocpp_item_t;
+
+/* predeclaration of ocpp_item the ocpp manager */
 static int ocpp_config(ocpp_item_t **items, struct json_object *config);
 static int ocpp_declare(ocpp_item_t *items, struct afb_apiset *declare_set, struct afb_apiset *call_set);
 static int ocpp_http(ocpp_item_t *items, struct afb_hsrv *hsrv);
@@ -35,11 +41,10 @@ static int ocpp_serve(ocpp_item_t *items, struct afb_apiset *call_set);
 static int ocpp_exit(ocpp_item_t *items, struct afb_apiset *declare_set);
 
 /* predeclaration of ocpp_ws the websocket link instances */
-struct ocpp_ws;
 static struct ocpp_ws *ocpp_ws_create_cb(ocpp_item_t *closure, int fd, int autoclose,
 		struct afb_apiset *apiset, struct afb_session *session, struct afb_token *token,
 		void (*cleanup)(void*), void *cleanup_closure);
-static int ocpp_connect(ocpp_item_t *item);
+static int ocpp_client_create(ocpp_item_t *item);
 
 /*************************************************************/
 /*************************************************************/
@@ -172,7 +177,7 @@ static int ocpp_declare(ocpp_item_t *items, struct afb_apiset *declare_set, stru
 		items->call_set = afb_apiset_addref(call_set);
 		if (items->uri != NULL) {
 			/* when client */
-			rc = ocpp_connect(items);
+			rc = ocpp_client_create(items);
 		}
 	}
 	return rc;
@@ -213,10 +218,6 @@ static int ocpp_exit(ocpp_item_t *items, struct afb_apiset *declare_set)
 /*********************************************************************************************/
 /*********************************************************************************************/
 
-/* predeclaration of structures */
-struct ocpp_ws;
-struct ocpp_req;
-
 /* predeclaration of websocket callbacks */
 static void ows_on_hangup_cb(void *closure, struct afb_wsj1 *wsj1);
 static void ows_on_call_cb(void *closure, const char *api, const char *verb, struct afb_wsj1_msg *msg);
@@ -227,6 +228,9 @@ static void wsreq_destroy(struct afb_req_common *comreq);
 static void wsreq_reply(struct afb_req_common *comreq, int status, unsigned nparams, struct afb_data * const params[]);
 static int  wsreq_interface(struct afb_req_common *req, int id, const char *name, void **result);
 
+/* predeclaration of reconnection */
+static int ocpp_client_reconnect(struct ocpp_ws *ows);
+
 /**
  * declaration of websocket structure
  */
@@ -234,6 +238,9 @@ struct ocpp_ws
 {
 	/** counter of reference */
 	int refcount;
+
+	/** type of connection */
+	int is_server;
 
 	/** function for cleaning up */
 	void (*cleanup)(void*);
@@ -272,6 +279,9 @@ struct ocpp_req
 	/** the common request MUST BE FIRST */
 	struct afb_req_common comreq;
 
+	/** link for hangup */
+	struct ocpp_req *next;
+
 	/** the handling OCPP connection */
 	struct ocpp_ws *ows;
 
@@ -297,9 +307,6 @@ static struct afb_api_itf bkapitf = {
 	.process = ows_on_process
 };
 
-/** for creating api names */
-static unsigned bkapinum = 0;
-
 /***************************************************************
 ****************************************************************
 **
@@ -312,8 +319,7 @@ static
 struct ocpp_ws *
 ocpp_ws_create(
 	ocpp_item_t *ocpp,
-	int fd,
-	int autoclose,
+	int is_server,
 	struct afb_apiset *apiset,
 	struct afb_session *session,
 	struct afb_token *token,
@@ -329,61 +335,36 @@ ocpp_ws_create(
 		goto error;
 
 	result->refcount = 1;
+	result->is_server = is_server;
 	result->cleanup = cleanup;
 	result->cleanup_closure = cleanup_closure;
 	result->session = afb_session_addref(session);
 	result->token = afb_token_addref(token);
 	result->ocpp = ocpp;
+	result->wsj1 = NULL;
+#if WITH_CRED
+	result->cred = NULL;
+#endif
 	strcpy(result->backapi, name);
 	if (result->session == NULL)
 		goto error2;
 
-	result->wsj1 = afb_wsj1_create(fd, autoclose, &wsj1_itf, result);
-	autoclose = 0;
-	if (result->wsj1 == NULL)
-		goto error3;
-
-	afb_wsj1_set_masking(result->wsj1, 1);
 	aai.closure = result;
 	aai.itf = &bkapitf;
 	aai.group = result;
 	if (afb_apiset_add(ocpp->declare_set, result->backapi, aai) < 0)
-		goto error4;
+		goto error3;
 
-#if WITH_CRED
-	afb_cred_create_for_socket(&result->cred, fd);
-#endif
 	result->apiset = afb_apiset_addref(apiset);
 	return result;
 
-error4:
-	afb_wsj1_unref(result->wsj1);
 error3:
 	afb_session_unref(result->session);
 	afb_token_unref(result->token);
 error2:
 	free(result);
 error:
-	if (autoclose)
-		close(fd);
 	return NULL;
-}
-
-static
-struct ocpp_ws *
-ocpp_ws_create_cb(
-	ocpp_item_t *ocpp,
-	int fd,
-	int autoclose,
-	struct afb_apiset *apiset,
-	struct afb_session *session,
-	struct afb_token *token,
-	void (*cleanup)(void*),
-	void *cleanup_closure
-) {
-	char backapi[50];
-	sprintf(backapi, OCPP_BKAPI_PATTERN, ++bkapinum);
-	return ocpp_ws_create(ocpp, fd, autoclose, apiset, session, token, cleanup, cleanup_closure, backapi);
 }
 
 struct ocpp_ws *ocpp_ws_addref(struct ocpp_ws *ws)
@@ -411,9 +392,24 @@ void ocpp_ws_unref(struct ocpp_ws *ws)
 
 static void ows_on_hangup_cb(void *closure, struct afb_wsj1 *wsj1)
 {
-	struct ocpp_ws *ws = closure;
-	afb_monitor_api_disconnected(ws->backapi);
-	ocpp_ws_unref(ws);
+	struct ocpp_ws *ows = closure;
+	ows->wsj1 = NULL;
+	afb_monitor_api_disconnected(ows->backapi);
+	afb_wsj1_unref(wsj1);
+	if (ows->is_server)
+		ocpp_ws_unref(ows);
+}
+
+static int ocpp_ws_connect(struct ocpp_ws *ows, int fd, int autoclose)
+{
+	ows->wsj1 = afb_wsj1_create(fd, autoclose, &wsj1_itf, ows);
+	if (ows->wsj1 == NULL)
+		return -1;
+	afb_wsj1_set_masking(ows->wsj1, 1);
+#if WITH_CRED
+	afb_cred_create_for_socket(&ows->cred, fd);
+#endif
+	return 0;
 }
 
 static void ows_on_call_cb(void *closure, const char *api, const char *verb, struct afb_wsj1_msg *msg)
@@ -430,7 +426,7 @@ static void ows_on_call_cb(void *closure, const char *api, const char *verb, str
 	object = afb_wsj1_msg_object_s(msg, &len);
 	if (api != NULL) {
 		LIBAFB_ERROR("received websocket request with non NULL api %s/%s: %s", api, verb, object);
-		afb_wsj1_close(ws->wsj1, 1008, NULL);
+		afb_wsj1_close(ws->wsj1, WEBSOCKET_CODE_POLICY_VIOLATION, NULL);
 		return;
 	}
 	LIBAFB_DEBUG("received websocket request for %s/%s: %s", api, verb, object);
@@ -440,7 +436,7 @@ static void ows_on_call_cb(void *closure, const char *api, const char *verb, str
 	rc = afb_data_create_raw(&arg, &afb_type_predefined_json, object, 1+len,
 					(void*)afb_wsj1_msg_unref, msg);
 	if (rc < 0) {
-		afb_wsj1_close(ws->wsj1, 1008, NULL);
+		afb_wsj1_close(ws->wsj1, WEBSOCKET_CODE_POLICY_VIOLATION, NULL);
 		return;
 	}
 
@@ -448,7 +444,7 @@ static void ows_on_call_cb(void *closure, const char *api, const char *verb, str
 	wsreq = calloc(1, sizeof *wsreq);
 	if (wsreq == NULL) {
 		afb_data_unref(arg);
-		afb_wsj1_close(ws->wsj1, 1008, NULL);
+		afb_wsj1_close(ws->wsj1, WEBSOCKET_CODE_POLICY_VIOLATION, NULL);
 		return;
 	}
 
@@ -488,15 +484,22 @@ static void ows_on_reply(void *closure, struct afb_wsj1_msg *msg)
 static void ows_send_call(void *closure1, const char *object, const void *closure2)
 {
 	struct afb_req_common *req = closure1;
-	const struct ocpp_ws *ws = closure2;
+	struct ocpp_ws *ows = (void*)closure2;
 	int rc;
+	if (ows->wsj1 == NULL) {
+		if (ows->is_server || ocpp_client_reconnect(ows) < 0) {
+			afb_req_common_reply_hookable(req, AFB_ERRNO_DISCONNECTED, 0, NULL);
+			return;
+		}
+	}
 	afb_req_common_addref(req);
-	rc = afb_wsj1_call_s(ws->wsj1, NULL, req->verbname, object, ows_on_reply, req);
+	rc = afb_wsj1_call_s(ows->wsj1, NULL, req->verbname, object, ows_on_reply, req);
 }
 
 static void ows_on_process(void *closure, struct afb_req_common *req)
 {
-	int rc = afb_json_legacy_do2_single_json_string(req->params.ndata, req->params.data, ows_send_call, req, closure);
+	int rc = afb_json_legacy_do2_single_json_string(
+			req->params.ndata, req->params.data, ows_send_call, req, closure);
 }
 
 /***************************************************************
@@ -553,39 +556,91 @@ static int wsreq_interface(struct afb_req_common *comreq, int id, const char *na
 /***************************************************************
 ****************************************************************
 **
-**  functions of wsreq / afb_req
+**  server part
 **
 ****************************************************************
 ***************************************************************/
 
-static int ocpp_connect(ocpp_item_t *ocpp)
-{
+/** for creating api names */
+static unsigned bkapinum = 0;
+
+static
+struct ocpp_ws *
+ocpp_ws_create_cb(
+	ocpp_item_t *ocpp,
+	int fd,
+	int autoclose,
+	struct afb_apiset *apiset,
+	struct afb_session *session,
+	struct afb_token *token,
+	void (*cleanup)(void*),
+	void *cleanup_closure
+) {
 	struct ocpp_ws *ows;
+	char backapi[50];
+
+	sprintf(backapi, OCPP_BKAPI_PATTERN, ++bkapinum);
+	ows = ocpp_ws_create(ocpp, 1, apiset, session, token,
+			cleanup, cleanup_closure, backapi);
+	if (ows == NULL) {
+		if (autoclose)
+			close(fd);
+	}
+	else {
+		if (ocpp_ws_connect(ows, fd, autoclose) < 0) {
+			ocpp_ws_unref(ows);
+			ows = NULL;
+		}
+	}
+	return ows;
+}
+
+/***************************************************************
+****************************************************************
+**
+**  client part
+**
+****************************************************************
+***************************************************************/
+
+static int ocpp_client_reconnect(struct ocpp_ws *ows)
+{
+	ocpp_item_t *ocpp = ows->ocpp;
 	char *headers[2]= {NULL,NULL};
-	int rc, fd;
+	int rc;
 	const char *protos[2] = { OCPP_PROTOCOL, NULL };
-	struct afb_session *session;
 	const char *uri = json_object_get_string(ocpp->uri);
 	struct ev_mgr *mgr = afb_ev_mgr_get_for_me();
 
 	if (ocpp->sha256pwd) {
-		rc= asprintf (&headers[0], "authorization: Basic %s", json_object_get_string(ocpp->sha256pwd));
+		rc= asprintf (&headers[0], "authorization: Basic %s",
+				json_object_get_string(ocpp->sha256pwd));
 		if (rc < 0)
 			headers[0] = NULL;
 	}
 	rc = afb_ws_connect(mgr, uri, protos, NULL, (const char**) headers);
 	free(headers[0]);
-	if (rc >= 0) {
-		fd = rc;
-		session = afb_api_common_get_common_session();
-		if (session == NULL)
-			rc = X_ENOMEM;
-		else {
-			ows = ocpp_ws_create(ocpp, fd, 1, ocpp->call_set, session, NULL, NULL, NULL, OCPP_API_CLIENT);
-			if (ows != NULL)
-				return 0;
-		}
-		close(fd);
+	if (rc >= 0)
+		rc = ocpp_ws_connect(ows, rc, 1);
+	return rc;
+}
+
+static int ocpp_client_create(ocpp_item_t *ocpp)
+{
+	struct ocpp_ws *ows;
+	int rc;
+	struct afb_session *session;
+
+	session = afb_api_common_get_common_session();
+	ows = ocpp_ws_create(ocpp, 0, ocpp->call_set,
+					session, NULL, NULL, NULL,
+					OCPP_API_CLIENT);
+	if (ows == NULL)
+		rc = -ENOMEM;
+	else {
+		rc = ocpp_client_reconnect(ows);
+		if (rc < 0)
+			ocpp_ws_unref(ows);
 	}
 	return rc;
 }
