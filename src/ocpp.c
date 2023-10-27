@@ -26,9 +26,7 @@
 #define OCPP_BKAPI         "OCPP-BACK-API"
 #define OCPP_BKAPI_PATTERN "x-OCPP-%u"
 
-
-AFB_EXTENSION("OCPP")
-
+/* predeclaration of ocpp_item the ocpp manager */
 typedef struct ocpp_item ocpp_item_t;
 static int ocpp_config(ocpp_item_t **items, struct json_object *config);
 static int ocpp_declare(ocpp_item_t *items, struct afb_apiset *declare_set, struct afb_apiset *call_set);
@@ -36,11 +34,20 @@ static int ocpp_http(ocpp_item_t *items, struct afb_hsrv *hsrv);
 static int ocpp_serve(ocpp_item_t *items, struct afb_apiset *call_set);
 static int ocpp_exit(ocpp_item_t *items, struct afb_apiset *declare_set);
 
+/* predeclaration of ocpp_ws the websocket link instances */
 struct ocpp_ws;
 static struct ocpp_ws *ocpp_ws_create_cb(ocpp_item_t *closure, int fd, int autoclose,
 		struct afb_apiset *apiset, struct afb_session *session, struct afb_token *token,
 		void (*cleanup)(void*), void *cleanup_closure);
 static int ocpp_connect(ocpp_item_t *item);
+
+/*************************************************************/
+/*************************************************************/
+/** AFB-EXTENSION interface                                 **/
+/*************************************************************/
+/*************************************************************/
+
+AFB_EXTENSION("OCPP")
 
 const struct argp_option AfbExtensionOptionsV1[] = {
 	{ .name="ocpp-client",      .key='c',   .arg="URI", .doc="connect to an OCPP service as API 'OCPP'" },
@@ -79,16 +86,34 @@ int AfbExtensionExitV1(void *data, struct afb_apiset *declare_set)
 	return ocpp_exit((ocpp_item_t*)data, declare_set);
 }
 
+/*************************************************************/
+/*************************************************************/
+/** OCPP manager interface                                  **/
+/*************************************************************/
+/*************************************************************/
 
+/**
+ * managing structure for OCPP
+ */
 struct ocpp_item
 {
+	/** is it a server ? */
 	int server;
+
+	/** is it a client ? */
 	json_object *uri;
+
+	/** a key for connecting the client */
 	json_object *sha256pwd;
+
+	/** the declare set */
 	struct afb_apiset *declare_set;
+
+	/** the call set */
 	struct afb_apiset *call_set;
 };
 
+/** release OCPP manager */
 static void ocpp_free(ocpp_item_t *items)
 {
 	if (items) {
@@ -99,27 +124,33 @@ static void ocpp_free(ocpp_item_t *items)
 	}
 }
 
+/** creates the OCPP manager object from the JSON-C config */
 static int ocpp_config(ocpp_item_t **items, struct json_object *config)
 {
 	ocpp_item_t *item = NULL;
 	json_object *server = NULL, *uri = NULL, *sha256pwd=NULL;
 	int nbr, idx, rc = 0;
 
+	/* client URI */
 	if (!json_object_object_get_ex(config, "ocpp-client", &uri)
 	 || !json_object_is_type(uri, json_type_string))
 		uri = NULL;
 
+	/* is server ? */
 	if (!json_object_object_get_ex(config, "ocpp-server", &server))
 		server = NULL;
 
+	/* password */
 	if (!json_object_object_get_ex(config, "ocpp-pwd-base64", &sha256pwd))
 		sha256pwd = NULL;
 
+	/* create a manager only if there is some thing in */
 	if (uri != NULL || server != NULL || sha256pwd != NULL) {
 		item = calloc(1, sizeof *item);
 		if (item == NULL)
 			rc = -ENOMEM;
 		else {
+			/* record the extracted data */
 			item->server = server != NULL;
 			item->sha256pwd = uri == NULL ? NULL : json_object_get(sha256pwd);
 			item->uri = uri == NULL ? NULL : json_object_get(uri);
@@ -129,21 +160,25 @@ static int ocpp_config(ocpp_item_t **items, struct json_object *config)
 	return rc;
 }
 
+/** declares the OCPP APIs */
 static int ocpp_declare(ocpp_item_t *items, struct afb_apiset *declare_set, struct afb_apiset *call_set)
 {
 	int rc = 0;
 	if (items) {
+		/* TODO make record of public/private subset parametric */
 		//struct afb_apiset *ds = afb_apiset_subset_find(declare_set, "monitor") ?: declare_set;
-		struct afb_apiset *ds = declare_set;
+		struct afb_apiset *ds = declare_set; /* to the private scope for avoiding call to info by uidevtool */
 		items->declare_set = afb_apiset_addref(ds);
 		items->call_set = afb_apiset_addref(call_set);
 		if (items->uri != NULL) {
+			/* when client */
 			rc = ocpp_connect(items);
 		}
 	}
 	return rc;
 }
 
+/** declare server http */
 static int ocpp_http(ocpp_item_t *items, struct afb_hsrv *hsrv)
 {
 	int rc = 0;
@@ -158,6 +193,7 @@ static int ocpp_serve(ocpp_item_t *items, struct afb_apiset *call_set)
 	return 0;
 }
 
+/** clean up at exiting */
 static int ocpp_exit(ocpp_item_t *items, struct afb_apiset *declare_set)
 {
 	ocpp_free(items);
@@ -191,28 +227,55 @@ static void wsreq_destroy(struct afb_req_common *comreq);
 static void wsreq_reply(struct afb_req_common *comreq, int status, unsigned nparams, struct afb_data * const params[]);
 static int  wsreq_interface(struct afb_req_common *req, int id, const char *name, void **result);
 
-/* declaration of websocket structure */
+/**
+ * declaration of websocket structure
+ */
 struct ocpp_ws
 {
+	/** counter of reference */
 	int refcount;
+
+	/** function for cleaning up */
 	void (*cleanup)(void*);
+
+	/** closure for function for cleaning up */
 	void *cleanup_closure;
+
+	/** session of the connexion */
 	struct afb_session *session;
+
+	/** token for the connection */
 	struct afb_token *token;
+
+	/** the websocket of the connection */
 	struct afb_wsj1 *wsj1;
+
+	/** the call apiset */
 	struct afb_apiset *apiset;
+
 #if WITH_CRED
+	/** credentials of the connection */
 	struct afb_cred *cred;
 #endif
+	/** link to the OCPP manager */
 	ocpp_item_t *ocpp;
+
+	/** name of the API handling the connection */
 	char backapi[];
 };
 
-/* declaration of wsreq structure */
+/**
+ * declaration of ocpp_req, the structure for managing OCPP requests
+ */
 struct ocpp_req
 {
+	/** the common request MUST BE FIRST */
 	struct afb_req_common comreq;
+
+	/** the handling OCPP connection */
 	struct ocpp_ws *ows;
+
+	/** the received message */
 	struct afb_wsj1_msg *msgj1;
 };
 
@@ -234,6 +297,7 @@ static struct afb_api_itf bkapitf = {
 	.process = ows_on_process
 };
 
+/** for creating api names */
 static unsigned bkapinum = 0;
 
 /***************************************************************
@@ -348,6 +412,7 @@ void ocpp_ws_unref(struct ocpp_ws *ws)
 static void ows_on_hangup_cb(void *closure, struct afb_wsj1 *wsj1)
 {
 	struct ocpp_ws *ws = closure;
+	afb_monitor_api_disconnected(ws->backapi);
 	ocpp_ws_unref(ws);
 }
 
