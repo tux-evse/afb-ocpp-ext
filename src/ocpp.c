@@ -22,8 +22,8 @@
 #include <stdio.h>
 
 #define OCPP_PROTOCOL      "ocpp1.6"
-#define OCPP_API           "OCPP"
-#define OCPP_API_CLIENT    "OCPP-C"
+#define OCPP_REC           "OCPP-REC"
+#define OCPP_SND           "OCPP-SND"
 #define OCPP_BKAPI         "OCPP-BACK-API"
 #define OCPP_BKAPI_PATTERN "x-OCPP-%u"
 
@@ -69,7 +69,7 @@ int AfbExtensionConfigV1(void **data, struct json_object *config, const char *ui
 
 int AfbExtensionDeclareV1(void *data, struct afb_apiset *declare_set, struct afb_apiset *call_set)
 {
-	LIBAFB_NOTICE("Extension %s got to declare", AfbExtensionManifest.name);
+	LIBAFB_NOTICE("Extension %s successfully registered", AfbExtensionManifest.name);
 	return ocpp_declare((ocpp_item_t*)data, declare_set, call_set);
 }
 
@@ -81,7 +81,7 @@ int AfbExtensionHTTPV1(void *data, struct afb_hsrv *hsrv)
 
 int AfbExtensionServeV1(void *data, struct afb_apiset *call_set)
 {
-	LIBAFB_NOTICE("Extension %s got to serve", AfbExtensionManifest.name);
+	LIBAFB_NOTICE("Extension %s ready to serve", AfbExtensionManifest.name);
 	return ocpp_serve((ocpp_item_t*)data, call_set);
 }
 
@@ -429,7 +429,7 @@ static void ows_on_call_cb(void *closure, const char *api, const char *verb, str
 		afb_wsj1_close(ws->wsj1, WEBSOCKET_CODE_POLICY_VIOLATION, NULL);
 		return;
 	}
-	LIBAFB_DEBUG("received websocket request for %s/%s: %s", api, verb, object);
+	LIBAFB_DEBUG("received OCPP backend request for %s/%s: %s", OCPP_REC, verb, object);
 
 	/* make params */
 	afb_wsj1_msg_addref(msg);
@@ -449,7 +449,7 @@ static void ows_on_call_cb(void *closure, const char *api, const char *verb, str
 	}
 
 	/* init the context */
-	afb_req_common_init(&wsreq->comreq, &ocpp_ws_req_common_itf, OCPP_API, verb, 1, &arg);
+	afb_req_common_init(&wsreq->comreq, &ocpp_ws_req_common_itf, OCPP_REC, verb, 1, &arg);
 	afb_req_common_set_session(&wsreq->comreq, ws->session);
 	afb_req_common_set_token(&wsreq->comreq, ws->token);
 #if WITH_CRED
@@ -634,7 +634,7 @@ static int ocpp_client_create(ocpp_item_t *ocpp)
 	session = afb_api_common_get_common_session();
 	ows = ocpp_ws_create(ocpp, 0, ocpp->call_set,
 					session, NULL, NULL, NULL,
-					OCPP_API_CLIENT);
+					OCPP_SND);
 	if (ows == NULL)
 		rc = -ENOMEM;
 	else {
