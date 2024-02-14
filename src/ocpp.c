@@ -27,20 +27,20 @@
 #define OCPP_BKAPI         "OCPP-BACK-API"
 #define OCPP_BKAPI_PATTERN "x-OCPP-%u"
 
-/* predeclaration of structures */
+/* pre-declaration of structures */
 struct ocpp_item;
 struct ocpp_ws;
 struct ocpp_req;
 typedef struct ocpp_item ocpp_item_t;
 
-/* predeclaration of ocpp_item the ocpp manager */
+/* pre-declaration of ocpp_item the ocpp manager */
 static int ocpp_config(ocpp_item_t **items, struct json_object *config);
 static int ocpp_declare(ocpp_item_t *items, struct afb_apiset *declare_set, struct afb_apiset *call_set);
 static int ocpp_http(ocpp_item_t *items, struct afb_hsrv *hsrv);
 static int ocpp_serve(ocpp_item_t *items, struct afb_apiset *call_set);
 static int ocpp_exit(ocpp_item_t *items, struct afb_apiset *declare_set);
 
-/* predeclaration of ocpp_ws the websocket link instances */
+/* pre-declaration of ocpp_ws the websocket link instances */
 static struct ocpp_ws *ocpp_ws_create_cb(ocpp_item_t *closure, int fd, int autoclose,
 		struct afb_apiset *apiset, struct afb_session *session, struct afb_token *token,
 		void (*cleanup)(void*), void *cleanup_closure);
@@ -218,17 +218,17 @@ static int ocpp_exit(ocpp_item_t *items, struct afb_apiset *declare_set)
 /*********************************************************************************************/
 /*********************************************************************************************/
 
-/* predeclaration of websocket callbacks */
+/* pre-declaration of websocket callbacks */
 static void ows_on_hangup_cb(void *closure, struct afb_wsj1 *wsj1);
 static void ows_on_call_cb(void *closure, const char *api, const char *verb, struct afb_wsj1_msg *msg);
 static void ows_on_process(void *closure, struct afb_req_common *req);
 
-/* predeclaration of wsreq callbacks */
+/* pre-declaration of wsreq callbacks */
 static void wsreq_destroy(struct afb_req_common *comreq);
 static void wsreq_reply(struct afb_req_common *comreq, int status, unsigned nparams, struct afb_data * const params[]);
 static int  wsreq_interface(struct afb_req_common *req, int id, const char *name, void **result);
 
-/* predeclaration of reconnection */
+/* pre-declaration of reconnection */
 static int ocpp_client_reconnect(struct ocpp_ws *ows);
 
 /**
@@ -248,7 +248,7 @@ struct ocpp_ws
 	/** closure for function for cleaning up */
 	void *cleanup_closure;
 
-	/** session of the connexion */
+	/** session of the connection */
 	struct afb_session *session;
 
 	/** token for the connection */
