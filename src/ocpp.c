@@ -56,6 +56,7 @@ AFB_EXTENSION("OCPP")
 
 const struct argp_option AfbExtensionOptionsV1[] = {
 	{ .name="ocpp-client",      .key='c',   .arg="URI", .doc="connect to an OCPP service as API 'OCPP'" },
+	{ .name="ocpp-scope",       .key='k',   .arg="name", .doc="scope of the declared API" },
 	{ .name="ocpp-server",      .key='s',   .arg=0, .doc="Adds an 'OCPP' server" },
 	{ .name="ocpp-pwd-base64",  .key='p',   .arg="PWD-U64-ENCODE", .doc="Base64 encoded password" },
 	{ .name=0, .key=0, .doc=0 }
@@ -108,6 +109,9 @@ struct ocpp_item
 	/** is it a client ? */
 	json_object *uri;
 
+	/** scope of the API */
+	json_object *scope;
+
 	/** a key for connecting the client */
 	json_object *sha256pwd;
 
@@ -133,7 +137,7 @@ static void ocpp_free(ocpp_item_t *items)
 static int ocpp_config(ocpp_item_t **items, struct json_object *config)
 {
 	ocpp_item_t *item = NULL;
-	json_object *server = NULL, *uri = NULL, *sha256pwd=NULL;
+	json_object *server = NULL, *uri = NULL, *sha256pwd = NULL, *scope = NULL;
 	int nbr, idx, rc = 0;
 
 	/* client URI */
@@ -149,6 +153,10 @@ static int ocpp_config(ocpp_item_t **items, struct json_object *config)
 	if (!json_object_object_get_ex(config, "ocpp-pwd-base64", &sha256pwd))
 		sha256pwd = NULL;
 
+	/* scope */
+	if (!json_object_object_get_ex(config, "ocpp-scope", &scope))
+		scope = NULL;
+
 	/* create a manager only if there is some thing in */
 	if (uri != NULL || server != NULL || sha256pwd != NULL) {
 		item = calloc(1, sizeof *item);
@@ -159,6 +167,7 @@ static int ocpp_config(ocpp_item_t **items, struct json_object *config)
 			item->server = server != NULL;
 			item->sha256pwd = uri == NULL ? NULL : json_object_get(sha256pwd);
 			item->uri = uri == NULL ? NULL : json_object_get(uri);
+			item->scope = scope == NULL ? NULL : json_object_get(scope);
 		}
 	}
 	*items = item;
@@ -173,6 +182,8 @@ static int ocpp_declare(ocpp_item_t *items, struct afb_apiset *declare_set, stru
 		/* TODO make record of public/private subset parametric */
 		//struct afb_apiset *ds = afb_apiset_subset_find(declare_set, "monitor") ?: declare_set;
 		struct afb_apiset *ds = declare_set; /* to the private scope for avoiding call to info by uidevtool */
+		if (items->scope != NULL)
+			ds = afb_apiset_subset_find(ds, json_object_get_string(items->scope)) ?: ds;
 		items->declare_set = afb_apiset_addref(ds);
 		items->call_set = afb_apiset_addref(call_set);
 		if (items->uri != NULL) {
