@@ -4,7 +4,6 @@
  *
  */
 
-#include <time.h>
 #define _GNU_SOURCE
 
 #include <stdlib.h>
