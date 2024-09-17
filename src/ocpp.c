@@ -4,6 +4,7 @@
  *
  */
 
+#include <time.h>
 #define _GNU_SOURCE
 
 #include <stdlib.h>
@@ -460,7 +461,7 @@ static void ows_on_call_cb(void *closure, const char *api, const char *verb, str
 	}
 
 	/* init the context */
-	afb_req_common_init(&wsreq->comreq, &ocpp_ws_req_common_itf, OCPP_REC, verb, 1, &arg);
+	afb_req_common_init(&wsreq->comreq, &ocpp_ws_req_common_itf, OCPP_REC, verb, 1, &arg, NULL);
 	afb_req_common_set_session(&wsreq->comreq, ws->session);
 	afb_req_common_set_token(&wsreq->comreq, ws->token);
 #if WITH_CRED
